@@ -1,0 +1,237 @@
+spring:
+#  DB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orderdb
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: org.postgresql.Driver
+# JPA
+  jpa:
+    database: postgresql
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: Asia/Kolkata
+# cloud stream of rabbit
+  cloud:
+    bus:
+      enabled: true
+      destination: springCloudBus   # bus topic/queue name
+    stream:
+      bindings:
+        createOrder-out-0: # <-- output channel of your function
+          destination: order.exchange
+          content-type: application/json
+      # 👉 EXPLICITLY TELL SPRING: "USE KAFKA"
+        springCloudBus-out-0:
+          binder: rabbit
+        springCloudBus-in-0:
+          binder: rabbit
+      default-binder: kafka
+      kafka:
+        binder:
+          brokers: localhost:9092
+
+
+  #      rabbit:
+#        bindings:
+#          createOrder-out-0:
+#            producer:
+#              routing-key-expression: '''order.tracking'''
+  rabbitmq:
+    addresses: ${RABBIT_ADDRESS}
+    connection-timeout: 30000
+
+#rabbitmq:
+#  exchange:
+#    name: order.exchange
+#  queue:
+#    name: order.queue
+#  routing:
+#    key: order.tracking
+
+server:
+  port: 8083
+  servlet:
+    context-path: /api/v1
+
+management:
+  health:
+    circuitbreakers:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    shutdown:
+      enabled: true
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0   # 100% sampling (use lower in prod)
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka
+
+# ═══════════════════════════════════════════════════════════════
+# LOGGING CONFIGURATION - Optimized for Retry Visibility
+# ═══════════════════════════════════════════════════════════════
+logging:
+  level:
+    root: INFO
+    # Your application packages
+    com.ecommerce.orderms: DEBUG
+    com.ecommerce.orderms.service.impl: DEBUG
+    com.ecommerce.orderms.controller: DEBUG
+
+    # Resilience4j - Shows retry attempts and circuit breaker state
+    io.github.resilience4j: DEBUG
+    io.github.resilience4j.retry: DEBUG
+    io.github.resilience4j.circuitbreaker: DEBUG
+
+    # HTTP client - Shows actual service calls
+    org.springframework.web.client.RestTemplate: DEBUG
+
+    # Feign client (if using Feign)
+    # feign: DEBUG
+
+  file:
+    name: logs/order-service.log
+    max-size: 10MB
+    max-history: 10
+
+  pattern:
+    # Console pattern - Clean and readable
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | [%thread] | %logger{40} | %msg%n"
+
+    # File pattern - More detailed for debugging
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | [%thread] | %logger{50} | %msg%n"
+
+# ═══════════════════════════════════════════════════════════════
+# RESILIENCE4J CONFIGURATION - Optimized for Retry Mechanism
+# ═══════════════════════════════════════════════════════════════
+resilience4j:
+  # ─────────────────────────────────────────────────────────────
+  # RETRY CONFIGURATION
+  # ─────────────────────────────────────────────────────────────
+  retry:
+    instances:
+      retryService:
+        max-attempts: 4
+        wait-duration: 2000ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.lang.IllegalStateException
+
+        # Retry only on specific exceptions
+#        retryExceptions:
+#          - org.springframework.web.client.ResourceAccessException
+#          - org.springframework.web.client.HttpServerErrorException
+#          - java.util.concurrent.TimeoutException
+#          - java.io.IOException
+#          - java.net.SocketTimeoutException
+#          - java.net.ConnectException
+#          - java.lang.IllegalStateException   # ← ADD THIS
+
+  # ─────────────────────────────────────────────────────────────
+  # CIRCUIT BREAKER CONFIGURATION
+  # ─────────────────────────────────────────────────────────────
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 3s
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+
+    instances:
+      productService:
+        baseConfig: default
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+
+      userService:
+        baseConfig: default
+        slidingWindowSize: 8
+        minimumNumberOfCalls: 4
+        failureRateThreshold: 50
+        waitDurationInOpenState: 8s
+
+  # ─────────────────────────────────────────────────────────────
+  # TIME LIMITER CONFIGURATION
+  # ─────────────────────────────────────────────────────────────
+  ratelimiter:
+    instances:
+      retryLimiter:
+        timeout_duration: 0
+        limit-refresh-period: 4
+        limit-for-period: 2
+
+# ═══════════════════════════════════════════════════════════════
+# APPLICATION PROPERTIES
+# ═══════════════════════════════════════════════════════════════
+app:
+  message: "Hello Order Service"
+
+  # Custom retry configuration (if needed for custom logic)
+  retry:
+    product-service:
+      max-attempts: 4
+      backoff-ms: 500
+    user-service:
+      max-attempts: 4
+      backoff-ms: 500
+
+---
+# ===================== DOCKER PROFILE =====================
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+  datasource:
+    # inside docker, "localhost" won't work → use container name
+    url: jdbc:postgresql://postgres:5432/orderdb
+
+  rabbitmq:
+    addresses: rabbitmq:5672
+
+  cloud:
+    stream:
+      kafka:
+        binder:
+          # inside docker, use kafka service name
+          brokers: kafka:9092
+
+eureka:
+  client:
+    serviceUrl:
+      # inside docker, use eureka container name
+      defaultZone: http://eureka_service:8761/eureka
+
+management:
+  zipkin:
+    tracing:
+      # already correct, but keeping consistent pattern
+      endpoint: http://zipkin:9411/api/v2/spans
