@@ -23,6 +23,20 @@ keycloak:
     realm: ecom-app
     clientId: admin-cli
 
+management:
+  health:
+    circuitbreakers:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    shutdown:
+      enabled: true
+    health:
+      show-details: always
+
 eureka:
   client:
     serviceUrl:
@@ -34,6 +48,7 @@ logging:
 
 app:
   message: "Hello User ms"
+
 
 
 
