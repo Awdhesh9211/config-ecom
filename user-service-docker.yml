@@ -10,7 +10,6 @@ spring:
   data:
     mongodb:
       uri: mongodb://mongo:27017/ms_ecom_userdb
-      database: ms_ecom_userdb
 
   rabbitmq:
     addresses: rabbitmq:5672
@@ -35,5 +34,6 @@ logging:
 
 app:
   message: "Hello User ms"
+
 
 
